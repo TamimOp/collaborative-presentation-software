@@ -126,6 +126,7 @@ const App = () => {
           </>
         )}
       </div>
+      <div></div>
 
       {/* Right Connected Users Panel */}
       <div>
@@ -133,18 +134,18 @@ const App = () => {
         {/* Display Presentation ID */}
         {users.map((user) => (
           <div key={user.socketId} className="p-2 border my-2">
-            {user.nickname}-({user.role}) <br />
+            {user.nickname} - {user.role}
             {role === "Creator" && (
               <>
                 <button
                   onClick={() => handleChangeRole(user.socketId, "Editor")}
                 >
-                  Editor &nbsp;
+                  Promote to Editor
                 </button>
                 <button
                   onClick={() => handleChangeRole(user.socketId, "Viewer")}
                 >
-                  Viewer
+                  Demote to Viewer
                 </button>
               </>
             )}
