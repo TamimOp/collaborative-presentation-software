@@ -5,20 +5,19 @@ import socket from "./socket";
 const App = () => {
   const [slides, setSlides] = useState([]);
   const [nickname, setNickname] = useState("");
+  const [presentationId, setPresentationId] = useState(""); // The current presentation ID
+  const [newPresentationId, setNewPresentationId] = useState(""); // For joining
   const [isJoined, setIsJoined] = useState(false);
-  const [presentationId] = useState("12345"); // Example ID
   const [newSlideContent, setNewSlideContent] = useState("");
   const [users, setUsers] = useState([]);
+  const [role, setRole] = useState(""); // Viewer/Editor/Creator
 
   useEffect(() => {
     if (isJoined) {
-      // Emit join-presentation event once when user joins
-      socket.emit("join-presentation", { presentationId, nickname });
-
-      // Set up event listeners
       socket.on("presentation-data", (data) => {
         setSlides(data.slides);
         setUsers(data.users);
+        setPresentationId(data.presentationId); // Set presentation ID for UI display
       });
 
       socket.on("slide-added", (slide) => {
@@ -40,31 +39,49 @@ const App = () => {
       });
     }
 
-    // Clean up event listeners on unmount
     return () => {
       socket.off("presentation-data");
       socket.off("slide-added");
       socket.off("slide-removed");
       socket.off("user-role-changed");
     };
-  }, [isJoined, presentationId, nickname]);
+  }, [isJoined]);
 
   const handleAddSlide = () => {
-    const newSlide = { content: newSlideContent };
-    socket.emit("add-slide", { presentationId, slide: newSlide });
-    setNewSlideContent(""); // Clear the input
+    if (role === "Creator") {
+      const newSlide = { content: newSlideContent };
+      socket.emit("add-slide", { presentationId, slide: newSlide });
+      setNewSlideContent(""); // Clear the input
+    }
   };
 
   const handleRemoveSlide = (index) => {
-    socket.emit("remove-slide", { presentationId, slideIndex: index });
+    if (role === "Creator") {
+      socket.emit("remove-slide", { presentationId, slideIndex: index });
+    }
   };
 
-  const handleChangeRole = (socketId, role) => {
-    socket.emit("change-role", { presentationId, socketId, role });
+  const handleChangeRole = (socketId, newRole) => {
+    if (role === "Creator") {
+      socket.emit("change-role", { presentationId, socketId, role: newRole });
+    }
   };
 
-  const handleJoin = () => {
+  const handleCreatePresentation = () => {
     if (nickname) {
+      socket.emit("create-presentation", { nickname });
+      setRole("Creator");
+      setIsJoined(true);
+    }
+  };
+
+  const handleJoinPresentation = () => {
+    if (nickname && newPresentationId) {
+      socket.emit("join-presentation", {
+        presentationId: newPresentationId,
+        nickname,
+      });
+      setRole("Viewer"); // Default role when joining
       setIsJoined(true);
     }
   };
@@ -73,51 +90,64 @@ const App = () => {
     <Layout
       nickname={nickname}
       setNickname={setNickname}
-      handleJoin={handleJoin}
+      handleCreatePresentation={handleCreatePresentation}
+      handleJoinPresentation={handleJoinPresentation}
       isJoined={isJoined}
+      setNewPresentationId={setNewPresentationId}
+      role={role}
     >
       {/* Left Slide Panel */}
       <div>
         {slides.map((slide, index) => (
           <div key={index} className="slide border p-2 my-2">
             <div>{slide.content}</div>
-            <button onClick={() => handleRemoveSlide(index)}>
-              Remove Slide
-            </button>
+            {role === "Creator" && (
+              <button onClick={() => handleRemoveSlide(index)}>
+                Remove Slide
+              </button>
+            )}
           </div>
         ))}
-        <input
-          type="text"
-          placeholder="New Slide Content"
-          value={newSlideContent}
-          onChange={(e) => setNewSlideContent(e.target.value)}
-          className="mt-2 p-2 border"
-        />
-        <button
-          onClick={handleAddSlide}
-          className="ml-2 p-2 bg-blue-500 text-white"
-        >
-          Add Slide
-        </button>
-      </div>
-
-      {/* Main Slide Editing Area */}
-      <div className="p-4">
-        {" "}
-        {/* You can add your editing functionality here */}{" "}
+        {role === "Creator" && (
+          <>
+            <input
+              type="text"
+              placeholder="New Slide Content"
+              value={newSlideContent}
+              onChange={(e) => setNewSlideContent(e.target.value)}
+              className="mt-2 p-2 border"
+            />
+            <button
+              onClick={handleAddSlide}
+              className="ml-2 p-2 bg-blue-500 text-white"
+            >
+              Add Slide
+            </button>
+          </>
+        )}
       </div>
 
       {/* Right Connected Users Panel */}
       <div>
+        <h3 className="font-bold">Presentation ID: {presentationId}</h3>{" "}
+        {/* Display Presentation ID */}
         {users.map((user) => (
           <div key={user.socketId} className="p-2 border my-2">
-            {user.nickname} - {user.role}
-            <button onClick={() => handleChangeRole(user.socketId, "Editor")}>
-              Promote to Editor
-            </button>
-            <button onClick={() => handleChangeRole(user.socketId, "Viewer")}>
-              Demote to Viewer
-            </button>
+            {user.nickname}-({user.role}) <br />
+            {role === "Creator" && (
+              <>
+                <button
+                  onClick={() => handleChangeRole(user.socketId, "Editor")}
+                >
+                  Editor &nbsp;
+                </button>
+                <button
+                  onClick={() => handleChangeRole(user.socketId, "Viewer")}
+                >
+                  Viewer
+                </button>
+              </>
+            )}
           </div>
         ))}
       </div>
