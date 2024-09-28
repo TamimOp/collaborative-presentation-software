@@ -5,41 +5,44 @@ import socket from "./socket";
 const App = () => {
   const [slides, setSlides] = useState([]);
   const [nickname, setNickname] = useState("");
-  const [presentationId, setPresentationId] = useState("12345"); // Example ID
+  const [isJoined, setIsJoined] = useState(false);
+  const [presentationId] = useState("12345"); // Example ID
   const [newSlideContent, setNewSlideContent] = useState("");
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
-    socket.emit("join-presentation", { presentationId, nickname });
+    if (isJoined) {
+      socket.emit("join-presentation", { presentationId, nickname });
 
-    socket.on("presentation-data", (data) => {
-      setSlides(data.slides);
-      setUsers(data.users);
-    });
+      socket.on("presentation-data", (data) => {
+        setSlides(data.slides);
+        setUsers(data.users);
+      });
 
-    socket.on("slide-added", (slide) => {
-      setSlides((prevSlides) => [...prevSlides, slide]);
-    });
+      socket.on("slide-added", (slide) => {
+        setSlides((prevSlides) => [...prevSlides, slide]);
+      });
 
-    socket.on("slide-removed", (slideIndex) => {
-      setSlides((prevSlides) =>
-        prevSlides.filter((_, index) => index !== slideIndex)
-      );
-    });
+      socket.on("slide-removed", (slideIndex) => {
+        setSlides((prevSlides) =>
+          prevSlides.filter((_, index) => index !== slideIndex)
+        );
+      });
 
-    socket.on("user-role-changed", ({ socketId, role }) => {
-      const updatedUsers = users.map((user) =>
-        user.socketId === socketId ? { ...user, role } : user
-      );
-      setUsers(updatedUsers);
-    });
+      socket.on("user-role-changed", ({ socketId, role }) => {
+        const updatedUsers = users.map((user) =>
+          user.socketId === socketId ? { ...user, role } : user
+        );
+        setUsers(updatedUsers);
+      });
+    }
 
     return () => {
       socket.off("slide-added");
       socket.off("slide-removed");
       socket.off("user-role-changed");
     };
-  }, [presentationId, nickname, users]);
+  }, [isJoined, presentationId, nickname, users]);
 
   const handleAddSlide = () => {
     const newSlide = { content: newSlideContent };
@@ -55,38 +58,54 @@ const App = () => {
     socket.emit("change-role", { presentationId, socketId, role });
   };
 
+  const handleJoin = () => {
+    if (nickname) {
+      setIsJoined(true);
+    }
+  };
+
   return (
-    <Layout>
-      <div className="flex items-center justify-center">
-        <input
-          type="text"
-          placeholder="Enter nickname"
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-        />
-      </div>
-      <div className="slide-editor">
-        <div className="slides">
-          {slides.map((slide, index) => (
-            <div key={index} className="slide">
-              <div>{slide.content}</div>
-              <button onClick={() => handleRemoveSlide(index)}>
-                Remove Slide
-              </button>
-            </div>
-          ))}
-        </div>
+    <Layout
+      nickname={nickname}
+      setNickname={setNickname}
+      handleJoin={handleJoin}
+      isJoined={isJoined}
+    >
+      {/* Left Slide Panel */}
+      <div>
+        {slides.map((slide, index) => (
+          <div key={index} className="slide border p-2 my-2">
+            <div>{slide.content}</div>
+            <button onClick={() => handleRemoveSlide(index)}>
+              Remove Slide
+            </button>
+          </div>
+        ))}
         <input
           type="text"
           placeholder="New Slide Content"
           value={newSlideContent}
           onChange={(e) => setNewSlideContent(e.target.value)}
+          className="mt-2 p-2 border"
         />
-        <button onClick={handleAddSlide}>Add Slide</button>
+        <button
+          onClick={handleAddSlide}
+          className="ml-2 p-2 bg-blue-500 text-white"
+        >
+          Add Slide
+        </button>
       </div>
-      <div className="user-list">
+
+      {/* Main Slide Editing Area */}
+      <div className="p-4">
+        {" "}
+        {/* You can add your editing functionality here */}{" "}
+      </div>
+
+      {/* Right Connected Users Panel */}
+      <div>
         {users.map((user) => (
-          <div key={user.socketId}>
+          <div key={user.socketId} className="p-2 border my-2">
             {user.nickname} - {user.role}
             <button onClick={() => handleChangeRole(user.socketId, "Editor")}>
               Promote to Editor
