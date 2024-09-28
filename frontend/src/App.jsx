@@ -12,8 +12,10 @@ const App = () => {
 
   useEffect(() => {
     if (isJoined) {
+      // Emit join-presentation event once when user joins
       socket.emit("join-presentation", { presentationId, nickname });
 
+      // Set up event listeners
       socket.on("presentation-data", (data) => {
         setSlides(data.slides);
         setUsers(data.users);
@@ -30,19 +32,22 @@ const App = () => {
       });
 
       socket.on("user-role-changed", ({ socketId, role }) => {
-        const updatedUsers = users.map((user) =>
-          user.socketId === socketId ? { ...user, role } : user
+        setUsers((prevUsers) =>
+          prevUsers.map((user) =>
+            user.socketId === socketId ? { ...user, role } : user
+          )
         );
-        setUsers(updatedUsers);
       });
     }
 
+    // Clean up event listeners on unmount
     return () => {
+      socket.off("presentation-data");
       socket.off("slide-added");
       socket.off("slide-removed");
       socket.off("user-role-changed");
     };
-  }, [isJoined, presentationId, nickname, users]);
+  }, [isJoined, presentationId, nickname]);
 
   const handleAddSlide = () => {
     const newSlide = { content: newSlideContent };
