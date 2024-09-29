@@ -243,6 +243,13 @@ const App = () => {
   const enablePencilMode = () => {
     fabricCanvasRef.current.isDrawingMode = true;
   };
+  const downloadAsPDF = () => {
+    const canvasDataURL = fabricCanvasRef.current.toDataURL();
+    const link = document.createElement("a");
+    link.href = canvasDataURL;
+    link.download = `presentation-slide-${currentSlideIndex}.pdf`;
+    link.click();
+  };
 
   return (
     <Layout
@@ -285,6 +292,9 @@ const App = () => {
           <button onClick={addCircle}>Add Circle</button>
           <button onClick={addTriangle}>Add Triangle</button>
           <button onClick={enablePencilMode}>Pencil</button>
+          <button onClick={downloadAsPDF} className="border p-1 bg-slate-200">
+            Export to PDF
+          </button>
         </div>
         <canvas ref={canvasRef} className="border my-4"></canvas>
       </div>
