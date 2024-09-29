@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Layout from "./components/Layout";
 import socket from "./socket";
+import { fabric } from "fabric";
 
 const App = () => {
   const [slides, setSlides] = useState([]);
@@ -11,6 +12,8 @@ const App = () => {
   const [newSlideContent, setNewSlideContent] = useState("");
   const [users, setUsers] = useState([]);
   const [role, setRole] = useState(""); // Viewer/Editor/Creator
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0); // Track the active slide
+  const canvasRef = useRef(null); // Ref for Fabric.js canvas
 
   useEffect(() => {
     if (isJoined) {
@@ -37,6 +40,13 @@ const App = () => {
           )
         );
       });
+
+      socket.on("canvas-update", (canvasData) => {
+        // Update the canvas with the new drawing data
+        if (canvasRef.current) {
+          canvasRef.current.loadFromJSON(canvasData);
+        }
+      });
     }
 
     return () => {
@@ -44,8 +54,26 @@ const App = () => {
       socket.off("slide-added");
       socket.off("slide-removed");
       socket.off("user-role-changed");
+      socket.off("canvas-update");
     };
   }, [isJoined]);
+
+  // Initialize Fabric.js canvas
+  useEffect(() => {
+    if (canvasRef.current === null && isJoined && role !== "Viewer") {
+      const canvas = new fabric.Canvas("canvas", {
+        isDrawingMode: true,
+        height: 600,
+        width: 800,
+      });
+      canvasRef.current = canvas;
+
+      canvas.on("path:created", () => {
+        const canvasData = JSON.stringify(canvas);
+        socket.emit("canvas-update", { presentationId, canvasData });
+      });
+    }
+  }, [isJoined, role]);
 
   const handleAddSlide = () => {
     if (role === "Creator") {
@@ -126,7 +154,11 @@ const App = () => {
           </>
         )}
       </div>
-      <div></div>
+
+      {/* Drawing Area */}
+      <div className="canvas-container flex-1 relative">
+        <canvas id="canvas" className="border" />
+      </div>
 
       {/* Right Connected Users Panel */}
       <div>
