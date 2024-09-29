@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import socket from "./socket";
 import { fabric } from "fabric"; // Fabric.js
 import "./index.css";
+import { jsPDF } from "jspdf";
 
 const App = () => {
   const [slides, setSlides] = useState([]);
@@ -158,7 +159,6 @@ const App = () => {
     socket.emit("add-slide", { presentationId });
   };
 
-  // Function to add editable text block
   const addTextBlock = () => {
     const text = new fabric.Textbox("Editable text", {
       left: 100,
@@ -168,7 +168,7 @@ const App = () => {
     });
     fabricCanvasRef.current.add(text);
     fabricCanvasRef.current.setActiveObject(text);
-    // Emit the text block to the server
+
     socket.emit("draw", {
       presentationId,
       drawingData: text.toObject(),
@@ -176,12 +176,11 @@ const App = () => {
     });
   };
 
-  // Erase tool implementation
   const enableEraseMode = () => {
     fabricCanvasRef.current.isDrawingMode = false;
     fabricCanvasRef.current.on("object:selected", (e) => {
       fabricCanvasRef.current.remove(e.target);
-      // Emit removal to the server if necessary
+
       socket.emit("remove", {
         presentationId,
         drawingData: e.target.toObject(),
@@ -190,7 +189,6 @@ const App = () => {
     });
   };
 
-  // Zoom in/out functionality
   const toggleZoom = () => {
     setIsZoomed(!isZoomed);
     const zoomFactor = isZoomed ? 1 : 2;
@@ -198,7 +196,6 @@ const App = () => {
     fabricCanvasRef.current.renderAll();
   };
 
-  // Function to draw a circle
   const addCircle = () => {
     const circle = new fabric.Circle({
       radius: 50,
@@ -210,7 +207,7 @@ const App = () => {
     });
     fabricCanvasRef.current.add(circle);
     fabricCanvasRef.current.setActiveObject(circle);
-    // Emit the circle to the server
+
     socket.emit("draw", {
       presentationId,
       drawingData: circle.toObject(),
@@ -218,7 +215,6 @@ const App = () => {
     });
   };
 
-  // Function to draw a triangle
   const addTriangle = () => {
     const triangle = new fabric.Triangle({
       width: 100,
@@ -231,24 +227,26 @@ const App = () => {
     });
     fabricCanvasRef.current.add(triangle);
     fabricCanvasRef.current.setActiveObject(triangle);
-    // Emit the triangle to the server
+
     socket.emit("draw", {
       presentationId,
       drawingData: triangle.toObject(),
       slideIndex: currentSlideIndex,
     });
   };
-
-  // Pencil tool to go back to drawing mode
   const enablePencilMode = () => {
     fabricCanvasRef.current.isDrawingMode = true;
   };
   const downloadAsPDF = () => {
-    const canvasDataURL = fabricCanvasRef.current.toDataURL();
-    const link = document.createElement("a");
-    link.href = canvasDataURL;
-    link.download = `presentation-slide-${currentSlideIndex}.pdf`;
-    link.click();
+    const canvasDataURL = fabricCanvasRef.current.toDataURL("image/png");
+
+    const pdf = new jsPDF();
+    const imgProps = pdf.getImageProperties(canvasDataURL);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+    pdf.addImage(canvasDataURL, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`presentation-slide-${currentSlideIndex}.pdf`);
   };
 
   return (
