@@ -1,4 +1,3 @@
-// App.jsx
 import { useState, useEffect, useRef } from "react";
 import Layout from "./components/Layout";
 import socket from "./socket";
@@ -22,7 +21,7 @@ const App = () => {
         setSlides(data.slides);
         setUsers(data.users);
         setPresentationId(data.presentationId);
-        loadDrawings(data.drawings); // Load previous drawings
+        loadDrawings(data.drawings[currentSlideIndex] || []); // Load drawings for the current slide
       });
 
       socket.on("draw", (drawingData) => {
@@ -36,31 +35,33 @@ const App = () => {
           )
         );
       });
+
+      socket.on("slide-drawing-data", (slideDrawings) => {
+        loadDrawings(slideDrawings);
+      });
     }
 
     return () => {
       socket.off("presentation-data");
       socket.off("draw");
       socket.off("user-role-changed");
+      socket.off("slide-drawing-data");
     };
-  }, [isJoined]);
+  }, [isJoined, currentSlideIndex]);
 
   // Initialize Fabric.js canvas and set up drawing/role-based interaction
   useEffect(() => {
     if (canvasRef.current && !fabricCanvasRef.current) {
-      // Initialize fabric.Canvas only once
       fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
       fabricCanvasRef.current.setWidth(800);
       fabricCanvasRef.current.setHeight(600);
     }
 
-    // Enable/disable drawing mode and interaction based on role
     if (fabricCanvasRef.current) {
       if (role === "Creator" || role === "Editor") {
-        // Allow drawing for Creator and Editor
         fabricCanvasRef.current.isDrawingMode = true;
-        fabricCanvasRef.current.selection = true; // Allow selection for Creator/Editor
-        fabricCanvasRef.current.forEachObject((obj) => (obj.selectable = true)); // Allow object selection for Creator/Editor
+        fabricCanvasRef.current.selection = true;
+        fabricCanvasRef.current.forEachObject((obj) => (obj.selectable = true));
         fabricCanvasRef.current.on("path:created", (e) => {
           socket.emit("draw", {
             presentationId,
@@ -69,27 +70,26 @@ const App = () => {
           });
         });
       } else {
-        // For viewers: disable all drawing and interaction
         fabricCanvasRef.current.isDrawingMode = false;
-        fabricCanvasRef.current.selection = false; // Disable selection for viewers
+        fabricCanvasRef.current.selection = false;
         fabricCanvasRef.current.forEachObject(
           (obj) => (obj.selectable = false)
-        ); // Disable object movement for viewers
+        );
       }
     }
 
     return () => {
-      // Proper cleanup
       if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.clear(); // Clear canvas
-        fabricCanvasRef.current.dispose(); // Dispose fabric instance
-        fabricCanvasRef.current = null; // Set to null to avoid multiple dispose calls
+        fabricCanvasRef.current.clear();
+        fabricCanvasRef.current.dispose();
+        fabricCanvasRef.current = null;
       }
     };
   }, [role, presentationId, currentSlideIndex]);
 
   const loadDrawings = (drawings) => {
     if (fabricCanvasRef.current) {
+      fabricCanvasRef.current.clear();
       drawings.forEach((drawing) => {
         fabric.util.enlivenObjects([drawing], (objects) => {
           objects.forEach((obj) => {
@@ -124,7 +124,7 @@ const App = () => {
         presentationId: newPresentationId,
         nickname,
       });
-      setRole("Viewer"); // Default to Viewer when joining
+      setRole("Viewer");
       setIsJoined(true);
     }
   };
@@ -137,11 +137,14 @@ const App = () => {
 
   const handleSlideChange = (newIndex) => {
     setCurrentSlideIndex(newIndex);
-    // Load the drawing associated with the selected slide
     socket.emit("request-slide-drawing", {
       presentationId,
       slideIndex: newIndex,
     });
+  };
+
+  const handleAddSlide = () => {
+    socket.emit("add-slide", { presentationId });
   };
 
   return (
@@ -164,35 +167,34 @@ const App = () => {
             }`}
             onClick={() => handleSlideChange(index)}
           >
-            <div>{slide.content}</div>
+            {slide.content}
           </div>
         ))}
+        {role === "Creator" && (
+          <button onClick={handleAddSlide} className="my-2">
+            Add Slide
+          </button>
+        )}
       </div>
 
-      <div>
-        {/* Canvas area */}
-        <canvas ref={canvasRef} className="border" />
-      </div>
+      <canvas ref={canvasRef} className="border my-4"></canvas>
 
-      {/* Right Connected Users Panel */}
       <div>
         <h3 className="font-bold">Presentation ID: {presentationId}</h3>
         {users.map((user) => (
           <div key={user.socketId} className="p-2 border my-2">
             {user.nickname} - {user.role}
             {role === "Creator" && (
-              <>
-                <button
-                  onClick={() => handleChangeRole(user.socketId, "Editor")}
-                >
-                  Promote to Editor
-                </button>
-                <button
-                  onClick={() => handleChangeRole(user.socketId, "Viewer")}
-                >
-                  Demote to Viewer
-                </button>
-              </>
+              <select
+                value={user.role}
+                onChange={(e) =>
+                  handleChangeRole(user.socketId, e.target.value)
+                }
+              >
+                <option value="Viewer">Viewer</option>
+                <option value="Editor">Editor</option>
+                <option value="Creator">Creator</option>
+              </select>
             )}
           </div>
         ))}
