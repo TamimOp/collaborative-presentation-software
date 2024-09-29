@@ -57,7 +57,7 @@ const Layout = ({
         </aside>
 
         <main className="flex-1 bg-white p-4 overflow-hidden">
-          <h2 className="text-xl font-bold mb-4">Slide Editor</h2>
+          <h2 className="text-xl font-bold mb-4 text-center">Slide Editor</h2>
           {children[1]}
         </main>
 

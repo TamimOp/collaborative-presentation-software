@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Layout from "./components/Layout";
 import socket from "./socket";
 import { fabric } from "fabric"; // Fabric.js
+import "./index.css";
 
 const App = () => {
   const [slides, setSlides] = useState([]);
@@ -12,20 +13,21 @@ const App = () => {
   const [users, setUsers] = useState([]);
   const [role, setRole] = useState("");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const canvasRef = useRef(null); // For Fabric.js canvas
-  const fabricCanvasRef = useRef(null); // Reference for fabric.Canvas
+  const [isZoomed, setIsZoomed] = useState(false); // For zoom functionality
+  const canvasRef = useRef(null);
+  const fabricCanvasRef = useRef(null); // Reference for Fabric.js canvas
 
   useEffect(() => {
     if (isJoined) {
       socket.on("presentation-data", (data) => {
         setSlides(data.slides);
         setUsers(data.users);
-        setPresentationId(data.presentationId);
-        loadDrawings(data.drawings[currentSlideIndex] || []); // Load drawings for the current slide
+        setPresentationId(data.presentationId); // Ensure presentation ID shows up
+        loadDrawings(data.drawings[currentSlideIndex] || []);
       });
 
       socket.on("draw", (drawingData) => {
-        loadDrawingOnCanvas(drawingData); // Load new drawings in real-time
+        loadDrawingOnCanvas(drawingData);
       });
 
       socket.on("user-role-changed", ({ socketId, role }) => {
@@ -49,7 +51,6 @@ const App = () => {
     };
   }, [isJoined, currentSlideIndex]);
 
-  // Initialize Fabric.js canvas and set up drawing/role-based interaction
   useEffect(() => {
     if (canvasRef.current && !fabricCanvasRef.current) {
       fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
@@ -62,10 +63,20 @@ const App = () => {
         fabricCanvasRef.current.isDrawingMode = true;
         fabricCanvasRef.current.selection = true;
         fabricCanvasRef.current.forEachObject((obj) => (obj.selectable = true));
+
         fabricCanvasRef.current.on("path:created", (e) => {
           socket.emit("draw", {
             presentationId,
             drawingData: e.path,
+            slideIndex: currentSlideIndex,
+          });
+        });
+
+        // Listen for object added to the canvas
+        fabricCanvasRef.current.on("object:added", (e) => {
+          socket.emit("draw", {
+            presentationId,
+            drawingData: e.target.toObject(), // Emit the object data to the server
             slideIndex: currentSlideIndex,
           });
         });
@@ -147,6 +158,92 @@ const App = () => {
     socket.emit("add-slide", { presentationId });
   };
 
+  // Function to add editable text block
+  const addTextBlock = () => {
+    const text = new fabric.Textbox("Editable text", {
+      left: 100,
+      top: 100,
+      width: 200,
+      editable: true,
+    });
+    fabricCanvasRef.current.add(text);
+    fabricCanvasRef.current.setActiveObject(text);
+    // Emit the text block to the server
+    socket.emit("draw", {
+      presentationId,
+      drawingData: text.toObject(),
+      slideIndex: currentSlideIndex,
+    });
+  };
+
+  // Erase tool implementation
+  const enableEraseMode = () => {
+    fabricCanvasRef.current.isDrawingMode = false;
+    fabricCanvasRef.current.on("object:selected", (e) => {
+      fabricCanvasRef.current.remove(e.target);
+      // Emit removal to the server if necessary
+      socket.emit("remove", {
+        presentationId,
+        drawingData: e.target.toObject(),
+        slideIndex: currentSlideIndex,
+      });
+    });
+  };
+
+  // Zoom in/out functionality
+  const toggleZoom = () => {
+    setIsZoomed(!isZoomed);
+    const zoomFactor = isZoomed ? 1 : 2;
+    fabricCanvasRef.current.setZoom(zoomFactor);
+    fabricCanvasRef.current.renderAll();
+  };
+
+  // Function to draw a circle
+  const addCircle = () => {
+    const circle = new fabric.Circle({
+      radius: 50,
+      fill: "transparent",
+      stroke: "black",
+      left: 200,
+      top: 100,
+      selectable: true,
+    });
+    fabricCanvasRef.current.add(circle);
+    fabricCanvasRef.current.setActiveObject(circle);
+    // Emit the circle to the server
+    socket.emit("draw", {
+      presentationId,
+      drawingData: circle.toObject(),
+      slideIndex: currentSlideIndex,
+    });
+  };
+
+  // Function to draw a triangle
+  const addTriangle = () => {
+    const triangle = new fabric.Triangle({
+      width: 100,
+      height: 100,
+      fill: "transparent",
+      stroke: "black",
+      left: 200,
+      top: 200,
+      selectable: true,
+    });
+    fabricCanvasRef.current.add(triangle);
+    fabricCanvasRef.current.setActiveObject(triangle);
+    // Emit the triangle to the server
+    socket.emit("draw", {
+      presentationId,
+      drawingData: triangle.toObject(),
+      slideIndex: currentSlideIndex,
+    });
+  };
+
+  // Pencil tool to go back to drawing mode
+  const enablePencilMode = () => {
+    fabricCanvasRef.current.isDrawingMode = true;
+  };
+
   return (
     <Layout
       nickname={nickname}
@@ -177,7 +274,20 @@ const App = () => {
         )}
       </div>
 
-      <canvas ref={canvasRef} className="border my-4"></canvas>
+      <div className="flex flex-col justify-center">
+        {/* Toolbar with tools */}
+        <div className="toolbar flex flex-row space-x-4">
+          <button onClick={addTextBlock}>Add Text</button>
+          <button onClick={enableEraseMode}>Erase</button>
+          <button onClick={toggleZoom}>
+            {isZoomed ? "Zoom Out" : "Zoom In"}
+          </button>
+          <button onClick={addCircle}>Add Circle</button>
+          <button onClick={addTriangle}>Add Triangle</button>
+          <button onClick={enablePencilMode}>Pencil</button>
+        </div>
+        <canvas ref={canvasRef} className="border my-4"></canvas>
+      </div>
 
       <div>
         <h3 className="font-bold">Presentation ID: {presentationId}</h3>
