@@ -1,29 +1,30 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const { v4: uuidv4 } = require("uuid"); // For generating presentation IDs
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const presentations = {}; // Store all presentations
+const presentations = {};
 
 io.on("connection", (socket) => {
   console.log("A user connected");
 
   socket.on("create-presentation", ({ nickname }) => {
-    const presentationId = uuidv4(); // Generate unique presentation ID
-    presentations[presentationId] = { slides: [], users: [] };
+    const presentationId = uuidv4();
+    presentations[presentationId] = { slides: [], users: [], drawings: [] }; // Added drawings
 
     const user = { nickname, socketId: socket.id, role: "Creator" };
     presentations[presentationId].users.push(user);
     socket.join(presentationId);
 
-    // Emit presentation data to the creator
     io.to(presentationId).emit("presentation-data", {
       slides: presentations[presentationId].slides,
       users: presentations[presentationId].users,
+      drawings: presentations[presentationId].drawings, // Send drawings
       presentationId,
     });
   });
@@ -34,10 +35,10 @@ io.on("connection", (socket) => {
       presentations[presentationId].users.push(user);
       socket.join(presentationId);
 
-      // Send presentation data to everyone in the presentation, including the new user
       io.to(presentationId).emit("presentation-data", {
         slides: presentations[presentationId].slides,
         users: presentations[presentationId].users,
+        drawings: presentations[presentationId].drawings, // Send drawings
         presentationId,
       });
     } else {
@@ -45,29 +46,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("add-slide", ({ presentationId, slide }) => {
-    if (presentations[presentationId]) {
-      presentations[presentationId].slides.push(slide);
-
-      // Emit the updated slide list to everyone, including the creator
-      io.to(presentationId).emit("presentation-data", {
-        slides: presentations[presentationId].slides,
-        users: presentations[presentationId].users,
-        presentationId,
-      });
-    }
-  });
-
-  socket.on("remove-slide", ({ presentationId, slideIndex }) => {
-    if (presentations[presentationId]) {
-      presentations[presentationId].slides.splice(slideIndex, 1);
-
-      // Emit the updated slide list to everyone
-      io.to(presentationId).emit("presentation-data", {
-        slides: presentations[presentationId].slides,
-        users: presentations[presentationId].users,
-        presentationId,
-      });
+  socket.on("draw", ({ presentationId, drawingData }) => {
+    const user = presentations[presentationId].users.find(
+      (user) => user.socketId === socket.id
+    );
+    if (user && (user.role === "Creator" || user.role === "Editor")) {
+      presentations[presentationId].drawings.push(drawingData); // Save drawings
+      io.to(presentationId).emit("draw", drawingData); // Broadcast to all users
     }
   });
 
@@ -85,7 +70,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("A user disconnected");
-    // Here you could add logic to remove the user from presentations if needed
+    // Optionally remove user from presentation
   });
 });
 
