@@ -281,7 +281,11 @@ const App = () => {
 
       <div className="flex flex-col justify-center">
         {/* Toolbar with tools */}
-        <div className="toolbar flex flex-row space-x-4">
+        <div
+          className={`toolbar flex flex-row space-x-4 ${
+            role === "Creator" ? "block" : "hidden"
+          }`}
+        >
           <button onClick={addTextBlock}>Add Text</button>
           <button onClick={enableEraseMode}>Erase</button>
           <button onClick={toggleZoom}>

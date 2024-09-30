@@ -77,9 +77,34 @@ io.on("connection", (socket) => {
         presentation.drawings[slideIndex] = [];
       }
       presentation.drawings[slideIndex].push(drawingData);
-      socket.to(presentationId).emit("draw", drawingData);
+      io.to(presentationId).emit("presentation-data", {
+        slides: presentation.slides,
+        users: presentation.users,
+        drawings: presentation.drawings,
+        presentationId,
+      });
+      // Emit the full drawing data to ensure instant updates
+      io.to(presentationId).emit("draw", {
+        slideIndex,
+        drawings: presentation.drawings[slideIndex],
+      });
     }
   });
+
+  socket.on("erase", ({ presentationId, erasedObject, slideIndex }) => {
+    const presentation = presentations[presentationId];
+    if (presentation) {
+      const slideDrawings = presentation.drawings[slideIndex] || [];
+      presentation.drawings[slideIndex] = slideDrawings.filter(
+        (drawing) => drawing.id !== erasedObject.id
+      );
+      io.to(presentationId).emit("draw", {
+        slideIndex,
+        drawings: presentation.drawings[slideIndex],
+      });
+    }
+  });
+
   socket.on("request-slide-drawing", ({ presentationId, slideIndex }) => {
     const presentation = presentations[presentationId];
     if (presentation) {
@@ -102,6 +127,7 @@ io.on("connection", (socket) => {
       }
     }
   });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
     for (const presentationId in presentations) {
