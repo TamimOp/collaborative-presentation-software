@@ -1,8 +1,8 @@
+// App.jsx
 import { useState, useEffect, useRef } from "react";
 import Layout from "./components/Layout";
 import socket from "./socket";
 import { fabric } from "fabric"; // Fabric.js
-import "./index.css";
 import { jsPDF } from "jspdf";
 
 const App = () => {
@@ -14,21 +14,22 @@ const App = () => {
   const [users, setUsers] = useState([]);
   const [role, setRole] = useState("");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [isZoomed, setIsZoomed] = useState(false); // For zoom functionality
-  const canvasRef = useRef(null);
-  const fabricCanvasRef = useRef(null); // Reference for Fabric.js canvas
+  const canvasRef = useRef(null); // For Fabric.js canvas
+  const fabricCanvasRef = useRef(null); // Reference for fabric.Canvas
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [isCursorMode, setIsCursorMode] = useState(false);
 
   useEffect(() => {
     if (isJoined) {
       socket.on("presentation-data", (data) => {
         setSlides(data.slides);
         setUsers(data.users);
-        setPresentationId(data.presentationId); // Ensure presentation ID shows up
-        loadDrawings(data.drawings[currentSlideIndex] || []);
+        setPresentationId(data.presentationId);
+        loadDrawings(data.drawings); // Load previous drawings
       });
 
       socket.on("draw", (drawingData) => {
-        loadDrawingOnCanvas(drawingData);
+        loadDrawingOnCanvas(drawingData); // Load new drawings in real-time
       });
 
       socket.on("user-role-changed", ({ socketId, role }) => {
@@ -38,33 +39,31 @@ const App = () => {
           )
         );
       });
-
-      socket.on("slide-drawing-data", (slideDrawings) => {
-        loadDrawings(slideDrawings);
-      });
     }
 
     return () => {
       socket.off("presentation-data");
       socket.off("draw");
       socket.off("user-role-changed");
-      socket.off("slide-drawing-data");
     };
-  }, [isJoined, currentSlideIndex]);
+  }, [isJoined]);
 
+  // Initialize Fabric.js canvas and set up drawing/role-based interaction
   useEffect(() => {
     if (canvasRef.current && !fabricCanvasRef.current) {
+      // Initialize fabric.Canvas only once
       fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
       fabricCanvasRef.current.setWidth(800);
       fabricCanvasRef.current.setHeight(600);
     }
 
+    // Enable/disable drawing mode and interaction based on role
     if (fabricCanvasRef.current) {
       if (role === "Creator" || role === "Editor") {
+        // Allow drawing for Creator and Editor
         fabricCanvasRef.current.isDrawingMode = true;
-        fabricCanvasRef.current.selection = true;
-        fabricCanvasRef.current.forEachObject((obj) => (obj.selectable = true));
-
+        fabricCanvasRef.current.selection = true; // Allow selection for Creator/Editor
+        fabricCanvasRef.current.forEachObject((obj) => (obj.selectable = true)); // Allow object selection for Creator/Editor
         fabricCanvasRef.current.on("path:created", (e) => {
           socket.emit("draw", {
             presentationId,
@@ -72,36 +71,28 @@ const App = () => {
             slideIndex: currentSlideIndex,
           });
         });
-
-        // Listen for object added to the canvas
-        fabricCanvasRef.current.on("object:added", (e) => {
-          socket.emit("draw", {
-            presentationId,
-            drawingData: e.target.toObject(), // Emit the object data to the server
-            slideIndex: currentSlideIndex,
-          });
-        });
       } else {
+        // For viewers: disable all drawing and interaction
         fabricCanvasRef.current.isDrawingMode = false;
-        fabricCanvasRef.current.selection = false;
+        fabricCanvasRef.current.selection = false; // Disable selection for viewers
         fabricCanvasRef.current.forEachObject(
           (obj) => (obj.selectable = false)
-        );
+        ); // Disable object movement for viewers
       }
     }
 
     return () => {
+      // Proper cleanup
       if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.clear();
-        fabricCanvasRef.current.dispose();
-        fabricCanvasRef.current = null;
+        fabricCanvasRef.current.clear(); // Clear canvas
+        fabricCanvasRef.current.dispose(); // Dispose fabric instance
+        fabricCanvasRef.current = null; // Set to null to avoid multiple dispose calls
       }
     };
   }, [role, presentationId, currentSlideIndex]);
 
   const loadDrawings = (drawings) => {
     if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.clear();
       drawings.forEach((drawing) => {
         fabric.util.enlivenObjects([drawing], (objects) => {
           objects.forEach((obj) => {
@@ -136,7 +127,7 @@ const App = () => {
         presentationId: newPresentationId,
         nickname,
       });
-      setRole("Viewer");
+      setRole("Viewer"); // Default to Viewer when joining
       setIsJoined(true);
     }
   };
@@ -149,16 +140,12 @@ const App = () => {
 
   const handleSlideChange = (newIndex) => {
     setCurrentSlideIndex(newIndex);
+    // Load the drawing associated with the selected slide
     socket.emit("request-slide-drawing", {
       presentationId,
       slideIndex: newIndex,
     });
   };
-
-  const handleAddSlide = () => {
-    socket.emit("add-slide", { presentationId });
-  };
-
   const addTextBlock = () => {
     const text = new fabric.Textbox("Editable text", {
       left: 100,
@@ -175,27 +162,12 @@ const App = () => {
       slideIndex: currentSlideIndex,
     });
   };
-
-  const enableEraseMode = () => {
-    fabricCanvasRef.current.isDrawingMode = false;
-    fabricCanvasRef.current.on("object:selected", (e) => {
-      fabricCanvasRef.current.remove(e.target);
-
-      socket.emit("remove", {
-        presentationId,
-        drawingData: e.target.toObject(),
-        slideIndex: currentSlideIndex,
-      });
-    });
-  };
-
   const toggleZoom = () => {
     setIsZoomed(!isZoomed);
     const zoomFactor = isZoomed ? 1 : 2;
     fabricCanvasRef.current.setZoom(zoomFactor);
     fabricCanvasRef.current.renderAll();
   };
-
   const addCircle = () => {
     const circle = new fabric.Circle({
       radius: 50,
@@ -248,6 +220,19 @@ const App = () => {
     pdf.addImage(canvasDataURL, "PNG", 0, 0, pdfWidth, pdfHeight);
     pdf.save(`presentation-slide-${currentSlideIndex}.pdf`);
   };
+  const toggleCursorMode = () => {
+    if (fabricCanvasRef.current) {
+      if (isCursorMode) {
+        // Switch to drawing mode
+        fabricCanvasRef.current.isDrawingMode = true;
+      } else {
+        // Switch to cursor mode
+        fabricCanvasRef.current.isDrawingMode = false;
+        fabricCanvasRef.current.selection = true; // Enable object selection
+      }
+    }
+    setIsCursorMode((prevMode) => !prevMode);
+  };
 
   return (
     <Layout
@@ -269,14 +254,9 @@ const App = () => {
             }`}
             onClick={() => handleSlideChange(index)}
           >
-            {slide.content}
+            <div>{slide.content}</div>
           </div>
         ))}
-        {role === "Creator" && (
-          <button onClick={handleAddSlide} className="my-2">
-            Add Slide
-          </button>
-        )}
       </div>
 
       <div className="flex flex-col justify-center">
@@ -287,7 +267,9 @@ const App = () => {
           }`}
         >
           <button onClick={addTextBlock}>Add Text</button>
-          <button onClick={enableEraseMode}>Erase</button>
+          <button onClick={toggleCursorMode}>
+            {isCursorMode ? "Drawing Mode" : "Cursor Mode"}
+          </button>
           <button onClick={toggleZoom}>
             {isZoomed ? "Zoom Out" : "Zoom In"}
           </button>
@@ -301,22 +283,25 @@ const App = () => {
         <canvas ref={canvasRef} className="border my-4"></canvas>
       </div>
 
+      {/* Right Connected Users Panel */}
       <div>
         <h3 className="font-bold">Presentation ID: {presentationId}</h3>
         {users.map((user) => (
           <div key={user.socketId} className="p-2 border my-2">
             {user.nickname} - {user.role}
             {role === "Creator" && (
-              <select
-                value={user.role}
-                onChange={(e) =>
-                  handleChangeRole(user.socketId, e.target.value)
-                }
-              >
-                <option value="Viewer">Viewer</option>
-                <option value="Editor">Editor</option>
-                <option value="Creator">Creator</option>
-              </select>
+              <>
+                <button
+                  onClick={() => handleChangeRole(user.socketId, "Editor")}
+                >
+                  Promote to Editor
+                </button>
+                <button
+                  onClick={() => handleChangeRole(user.socketId, "Viewer")}
+                >
+                  Demote to Viewer
+                </button>
+              </>
             )}
           </div>
         ))}

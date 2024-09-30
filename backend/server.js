@@ -1,99 +1,64 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const cors = require("cors");
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
-app.use(cors());
-
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 const presentations = {};
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("A user connected");
 
   socket.on("create-presentation", ({ nickname }) => {
-    const presentationId = socket.id;
-    presentations[presentationId] = {
-      slides: [{ content: "Slide 1" }],
-      users: [{ socketId: socket.id, nickname, role: "Creator" }],
-      drawings: {},
-    };
+    const presentationId = uuidv4();
+    presentations[presentationId] = { slides: [], users: [], drawings: [] }; // Added drawings
 
+    const user = { nickname, socketId: socket.id, role: "Creator" };
+    presentations[presentationId].users.push(user);
     socket.join(presentationId);
 
     io.to(presentationId).emit("presentation-data", {
       slides: presentations[presentationId].slides,
       users: presentations[presentationId].users,
-      drawings: presentations[presentationId].drawings,
+      drawings: presentations[presentationId].drawings, // Send drawings
       presentationId,
     });
   });
 
   socket.on("join-presentation", ({ presentationId, nickname }) => {
-    const presentation = presentations[presentationId];
-    if (!presentation) {
-      socket.emit("error", { message: "Presentation not found" });
-      return;
-    }
-
-    presentation.users.push({ socketId: socket.id, nickname, role: "Viewer" });
-    socket.join(presentationId);
-
-    io.to(presentationId).emit("presentation-data", {
-      slides: presentation.slides,
-      users: presentation.users,
-      drawings: presentation.drawings,
-      presentationId,
-    });
-  });
-
-  socket.on("add-slide", ({ presentationId }) => {
-    const presentation = presentations[presentationId];
-    if (presentation) {
-      const newSlide = { content: `Slide ${presentation.slides.length + 1}` };
-      presentation.slides.push(newSlide);
+    if (presentations[presentationId]) {
+      const user = { nickname, socketId: socket.id, role: "Viewer" };
+      presentations[presentationId].users.push(user);
+      socket.join(presentationId);
 
       io.to(presentationId).emit("presentation-data", {
-        slides: presentation.slides,
-        users: presentation.users,
-        drawings: presentation.drawings,
+        slides: presentations[presentationId].slides,
+        users: presentations[presentationId].users,
+        drawings: presentations[presentationId].drawings, // Send drawings
         presentationId,
       });
+    } else {
+      socket.emit("error", { message: "Invalid presentation ID" });
     }
   });
 
-  socket.on("draw", ({ presentationId, drawingData, slideIndex }) => {
-    const presentation = presentations[presentationId];
-    if (presentation) {
-      if (!presentation.drawings[slideIndex]) {
-        presentation.drawings[slideIndex] = [];
-      }
-      presentation.drawings[slideIndex].push(drawingData);
-      socket.to(presentationId).emit("draw", drawingData);
-    }
-  });
-  socket.on("request-slide-drawing", ({ presentationId, slideIndex }) => {
-    const presentation = presentations[presentationId];
-    if (presentation) {
-      socket.emit(
-        "slide-drawing-data",
-        presentation.drawings[slideIndex] || []
-      );
+  socket.on("draw", ({ presentationId, drawingData }) => {
+    const user = presentations[presentationId].users.find(
+      (user) => user.socketId === socket.id
+    );
+    if (user && (user.role === "Creator" || user.role === "Editor")) {
+      presentations[presentationId].drawings.push(drawingData); // Save drawings
+      io.to(presentationId).emit("draw", drawingData); // Broadcast to all users
     }
   });
 
   socket.on("change-role", ({ presentationId, socketId, role }) => {
-    const presentation = presentations[presentationId];
-    if (presentation) {
-      const user = presentation.users.find(
+    if (presentations[presentationId]) {
+      const user = presentations[presentationId].users.find(
         (user) => user.socketId === socketId
       );
       if (user) {
@@ -102,23 +67,13 @@ io.on("connection", (socket) => {
       }
     }
   });
+
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-    for (const presentationId in presentations) {
-      const presentation = presentations[presentationId];
-      presentation.users = presentation.users.filter(
-        (user) => user.socketId !== socket.id
-      );
-      io.to(presentationId).emit("presentation-data", {
-        slides: presentation.slides,
-        users: presentation.users,
-        drawings: presentation.drawings,
-        presentationId,
-      });
-    }
+    console.log("A user disconnected");
+    // Optionally remove user from presentation
   });
 });
 
 server.listen(4000, () => {
-  console.log("Server is running on port 4000");
+  console.log("Server running on port 4000");
 });
